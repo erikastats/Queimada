@@ -1,0 +1,170 @@
+---
+title: "Queimada"
+author: "Érika S. Machado"
+date: "18 de dezembro de 2018"
+output: html_document
+---
+
+
+# Bibliotecas utilizadas  
+
+```{r}
+#library(rvest)
+library(tidyverse)
+library(knitr)
+library(reshape2)
+library(rgdal)
+library(gdata)
+library(factoextra)
+#library(leaflet)
+#library(scales)
+```
+# O estudo  
+
+Nesse estudo faremos algumas análises da taxa PRODES, que são taxas anuais de desmatamento por região, que são usadas pelo governo brasileiro para estabelecimento de políticas públicas.  Os dados são de 2004 a 2017, refelentes aos estados: AC, AM, AP, MA, MT, PA, RO, RR, TO, além da Amazônia Legal.  
+
+#### Importando os dados  
+
+
+```{r}
+Dados = read.table("taxaprodes.txt", header = T)
+kable(Dados)
+```
+
+### Estatística descritiva
+
+```{r}
+summary(Dados[,2:11])
+```
+ 
+ Vemos que os maiores índices de ocorrência de queimadas são na Amazônia Legal e Mato Grosso.  
+ 
+```{r}
+a = melt(Dados[,2:11]) %>% mutate(Ano = rep(2004:2017,10))
+
+ggplot(a, aes(x = Ano, y = value, fill = variable,  colour=variable))  +
+  geom_line(aes(group=variable))+
+  geom_point(aes(group=variable)) +
+  xlab("Ano") +
+  ylab("Taxa PRODES") +
+  scale_colour_discrete()
+
+```
+
+Outra informação importante que devemos perceber é que houve uma significativa diminutição das queimadas na Amazônia Legal no decorrer dos anos. Provavelmente por algum tipo de política de prevenção, fiscalização e cuidados.  
+
+
+```{r}
+kable(cov(Dados[,2:11]), caption = "Covariância")
+kable(cor(Dados[,2:11]), caption = "Correlação")
+```
+
+As correlações são maiores para os estados que são vizinhos uns dos outros.  
+
+```{r}
+
+#função retirada do help(pairs)
+panel.hist <- function(x, ...)
+{
+  usr <- par("usr"); on.exit(par(usr))
+  par(usr = c(usr[1:2], 0, 1.5) )
+  h <- hist(x, plot = FALSE)
+  breaks <- h$breaks; nB <- length(breaks)
+  y <- h$counts; y <- y/max(y)
+  rect(breaks[-nB], 0, breaks[-1], y, col = "cyan", ...)
+}
+
+#função retirada do help(pairs)
+panel.cor <- function(x, y, digits = 2, prefix = "", cex.cor, ...)
+{
+  usr <- par("usr"); on.exit(par(usr))
+  par(usr = c(0, 1, 0, 1))
+  r <- abs(cor(x, y))
+  txt <- format(c(r, 0.123456789), digits = digits)[1]
+  txt <- paste0(prefix, txt)
+  if(missing(cex.cor)) cex.cor <- 0.8/strwidth(txt)
+  text(0.5, 0.5, txt, cex = cex.cor * r)
+}
+
+panel.lm <- function (x, y, col = par("col"), bg = NA, pch = par("pch"), 
+    cex = 1, col.line="red") {
+    points(x, y, pch = pch, col = col, bg = bg, cex = cex)
+    ok <- is.finite(x) & is.finite(y)
+    if (any(ok)) {
+       abline(lm(y[ok]~x[ok]), col = col.line)
+    }
+}
+
+pairs(Dados[,2:11], diag.panel = panel.hist, upper.panel = panel.cor,
+      lower.panel = panel.smooth)
+
+```
+Nesse conjunto de gráficos e correlações dá pra ver melhor o que está acontecendo e que muitas variáveis são correlacionadas.  
+
+# Análise de Componentes principais  
+
+Como as variáveis possuem correlações fortes, iremos padronizar os dados e fazer análise de componentes principais para buscar a combinação linear que mais representa a variabilidade dos dados.  
+
+### Padronizando os valores  
+
+```{r}
+pdados = data.frame(Dados$Ano.Estados,scale(Dados[,-1]))
+kable(pdados, caption = "Dados padronizados")
+```
+
+### Componentes principais  
+
+```{r}
+cp = prcomp(pdados[,2:11])
+cp
+summary(cp)
+```
+
+A primeira componente principal responde por cerca de 59,75% da variância total dos dados padronizados. Se pegarmos as três primeiras componentes principais, conseguimos atingir 92,64% da variância total.    
+
+```{r}
+plot(1:10, cp$sdev^2, type = "b", xlab = "Componente",
+ ylab = "Variância", pch = 20, cex.axis = 1.3, cex.lab = 1.3)
+
+```
+
+A seguir estão as correlações entre os dois primeiros componentes principais e as variáveis:  
+
+```{r}
+cp$sdev[1:2]*t(cp$rotation[,1:2])
+```
+
+
+# Análise de agrupamentos  
+
+Em seguida faremos agrupamentos dos anos da amostra para verificar os anos que apresentam características comuns. Esse grupo de ser tratado como momentos importantes de transição no histórico de queimadas.   
+```{r}
+set.seed(20)
+#tpdados = t(pdados[,2:11])
+#colnames(tpdados) = 2004:2017
+rownames(pdados) = 2004:2017
+pdados = pdados[,-1]
+kdados = kmeans(pdados,5)
+d = reshape2::melt(pdados)   
+
+kdados
+```
+
+
+```{r}
+d = d[-c(1:14),]
+Ano = rep(2004:2017, 9)
+e = data.frame(d, Ano)
+names(e) = c("UF", "PRODES", "Ano")
+kdados$cluster <- as.factor(kdados$cluster)
+b = kdados$cluster
+Ano = factor(names(b))
+b = data.frame(Ano, b)
+tabelafinal = merge(e,b, by.x = "Ano", by.y = "Ano")
+ggplot(tabelafinal, aes(Ano, PRODES, color = b)) + geom_point()
+```
+
+```{r}
+fviz_cluster(kdados, data = pdados)#1/sq
+```
+
